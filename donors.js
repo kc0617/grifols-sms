@@ -25,17 +25,18 @@ const DONORS = {
       { date: "2026-02-04", time: "5:00 PM", dayOfWeek: 3 },
     ],
   },
-  // Add additional donors below as the trial expands.
-  // Copy the format above — phone number must be in E.164 format (+1XXXXXXXXXX).
 };
 
 /**
  * Look up a donor by their phone number.
- * @param {string} phoneNumber - E.164 format, e.g. "+16175550101"
- * @returns {object|null} donor object or null if not found
+ * Handles both +13212710684 and 13212710684 formats.
  */
 function getDonorByPhone(phoneNumber) {
-  return DONORS[phoneNumber] || null;
+  // Normalize — ensure it starts with +
+  const normalized = phoneNumber.startsWith("+")
+    ? phoneNumber
+    : "+" + phoneNumber;
+  return DONORS[normalized] || null;
 }
 
 module.exports = { getDonorByPhone };
