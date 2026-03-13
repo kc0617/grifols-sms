@@ -2,8 +2,6 @@
 // index.js
 // Main server — receives inbound SMS from Vonage and drives the
 // appointment scheduling conversation.
-//
-// Vonage will POST to /inbound every time a donor texts your number.
 // ─────────────────────────────────────────────────────────────────────────────
 
 require("dotenv").config();
@@ -32,15 +30,18 @@ app.get("/", (req, res) => {
 });
 
 // ─── Inbound SMS Webhook ──────────────────────────────────────────────────────
-// Vonage sends a POST request here every time a donor texts your number.
+// Vonage may send GET or POST — we handle both.
 
-app.post("/inbound", async (req, res) => {
-  // Acknowledge receipt immediately — Vonage requires a fast 200 response
+async function handleInbound(req, res) {
   res.status(200).end();
 
-  const from = req.body.msisdn || req.body.from;   // Donor's phone number
-  const rawText = req.body.text || "";               // Their message
+  const params = Object.assign({}, req.query, req.body);
+
+  const from = params.msisdn || params.from;
+  const rawText = params.text || "";
   const text = rawText.trim().toLowerCase();
+
+  console.log(`[Inbound] Raw params:`, JSON.stringify(params));
 
   if (!from) {
     console.warn("[Inbound] Received message with no sender number — skipping.");
@@ -51,8 +52,6 @@ app.post("/inbound", async (req, res) => {
 
   const session = getSession(from);
 
-  // ── Global STOP Handler ────────────────────────────────────────────────────
-  // Must be handled before anything else, per carrier compliance rules.
   if (STOP_KEYWORDS.includes(text)) {
     updateSession(from, { optedOut: true, step: "opted_out" });
     await sendSMS(
@@ -62,14 +61,11 @@ app.post("/inbound", async (req, res) => {
     return;
   }
 
-  // ── Block opted-out donors ─────────────────────────────────────────────────
   if (session.optedOut) {
-    // Do not respond — donor has opted out
     console.log(`[Inbound] ${from} is opted out — no response sent.`);
     return;
   }
 
-  // ── Route to correct handler based on conversation step ───────────────────
   try {
     switch (session.step) {
       case "idle":
@@ -93,19 +89,16 @@ app.post("/inbound", async (req, res) => {
   } catch (err) {
     console.error(`[Error] Failed to process message from ${from}:`, err.message);
   }
-});
+}
+
+app.get("/inbound", handleInbound);
+app.post("/inbound", handleInbound);
 
 // ─── Conversation Handlers ────────────────────────────────────────────────────
 
-/**
- * STEP: idle
- * The donor has just texted in for the first time (or their session expired).
- * Look them up by phone number and begin the flow.
- */
 async function handleIdle(phone, text, session) {
   const donor = getDonorByPhone(phone);
 
-  // Donor not found in system
   if (!donor) {
     await sendSMS(
       phone,
@@ -116,7 +109,6 @@ async function handleIdle(phone, text, session) {
 
   const center = getCenterById(donor.centerId);
 
-  // Donor is deferred
   if (donor.status === "deferred") {
     const until = new Date(donor.deferralUntil + "T12:00:00").toLocaleDateString("en-US", {
       month: "long", day: "numeric",
@@ -128,7 +120,6 @@ async function handleIdle(phone, text, session) {
     return;
   }
 
-  // Active donor — generate suggestion and move to "suggest" step
   const suggested = getSuggestedAppointment(donor);
   updateSession(phone, { step: "suggest", suggested, donorId: donor.id });
 
@@ -138,17 +129,12 @@ async function handleIdle(phone, text, session) {
   );
 }
 
-/**
- * STEP: suggest
- * Donor has received a suggested appointment and we're waiting for YES or NO.
- */
 async function handleSuggest(phone, text, session) {
   const donor = getDonorByPhone(phone);
   const center = getCenterById(donor.centerId);
   const { suggested } = session;
 
   if (["yes", "y", "confirm", "ok", "sure"].includes(text)) {
-    // Confirmed — book the suggested appointment
     updateSession(phone, { step: "done", booking: { date: suggested.date, time: suggested.time } });
 
     await sendSMS(
@@ -157,7 +143,6 @@ async function handleSuggest(phone, text, session) {
     );
 
   } else if (["no", "n", "different", "change"].includes(text)) {
-    // Donor wants a different date — generate alternates
     const alternateDates = getAlternateDates(donor, suggested.date);
     updateSession(phone, { step: "alt_date", alternateDates });
 
@@ -171,7 +156,6 @@ async function handleSuggest(phone, text, session) {
     );
 
   } else {
-    // Unrecognized reply
     await sendSMS(
       phone,
       `Please reply YES to confirm your appointment on ${formatDate(suggested.date)} at ${suggested.time}, or NO to choose a different date.`
@@ -179,10 +163,6 @@ async function handleSuggest(phone, text, session) {
   }
 }
 
-/**
- * STEP: alt_date
- * Donor is choosing from a list of alternate dates (1–4).
- */
 async function handleAltDate(phone, text, session) {
   const donor = getDonorByPhone(phone);
   const center = getCenterById(donor.centerId);
@@ -210,10 +190,6 @@ async function handleAltDate(phone, text, session) {
   );
 }
 
-/**
- * STEP: alt_time
- * Donor is choosing a time slot from the list.
- */
 async function handleAltTime(phone, text, session) {
   const donor = getDonorByPhone(phone);
   const center = getCenterById(donor.centerId);
@@ -238,10 +214,6 @@ async function handleAltTime(phone, text, session) {
   );
 }
 
-/**
- * STEP: done
- * Appointment is already booked. Remind donor to call if they need changes.
- */
 async function handleDone(phone, session) {
   const donor = getDonorByPhone(phone);
   const center = getCenterById(donor.centerId);
@@ -258,5 +230,5 @@ async function handleDone(phone, session) {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Grifols SMS Scheduling Server running on port ${PORT}`);
-  console.log(`   Vonage webhook URL: POST /inbound`);
+  console.log(`   Vonage webhook URL: GET or POST /inbound`);
 });
