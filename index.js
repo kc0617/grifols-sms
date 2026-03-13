@@ -11,11 +11,11 @@ require("dotenv").config();
 const express = require("express");
 const app = express();
 
-const { getDonorByPhone } = require("./src/donors");
-const { getCenterById, getSlotsForDate } = require("./src/centers");
-const { getSuggestedAppointment, getAlternateDates, formatDate } = require("./src/scheduling");
-const { sendSMS } = require("./src/vonage");
-const { getSession, updateSession, clearSession } = require("./src/sessions");
+const { getDonorByPhone } = require("./donors");
+const { getCenterById, getSlotsForDate } = require("./centers");
+const { getSuggestedAppointment, getAlternateDates, formatDate } = require("./scheduling");
+const { sendSMS } = require("./vonage");
+const { getSession, updateSession, clearSession } = require("./sessions");
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
