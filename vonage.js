@@ -1,26 +1,22 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // vonage.js
-// Sends SMS via Vonage REST API directly (no SDK dependency).
+// Sends SMS via Textbelt API.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const https = require("https");
 const querystring = require("querystring");
 
-const FROM_NUMBER = process.env.VONAGE_FROM_NUMBER;
-
 async function sendSMS(toNumber, message) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const params = querystring.stringify({
-      api_key:    process.env.VONAGE_API_KEY,
-      api_secret: process.env.VONAGE_API_SECRET,
-      to:         toNumber.replace(/\D/g, ""),
-      from:       FROM_NUMBER,
-      text:       message,
+      phone:   toNumber,
+      message: message,
+      key:     process.env.TEXTBELT_KEY,
     });
 
     const options = {
-      hostname: "rest.nexmo.com",
-      path:     "/sms/json",
+      hostname: "textbelt.com",
+      path:     "/text",
       method:   "POST",
       headers: {
         "Content-Type":   "application/x-www-form-urlencoded",
@@ -34,24 +30,21 @@ async function sendSMS(toNumber, message) {
       res.on("end", () => {
         try {
           const json = JSON.parse(data);
-          const msg = json.messages && json.messages[0];
-          if (msg && msg.status === "0") {
-            console.log(`[Vonage] SMS sent to ${toNumber}`);
-            resolve();
+          if (json.success) {
+            console.log(`[Textbelt] SMS sent to ${toNumber}`);
           } else {
-            console.error(`[Vonage] Send failed:`, JSON.stringify(msg));
-            resolve(); // Don't crash the server on SMS failure
+            console.error(`[Textbelt] Send failed:`, json.error);
           }
         } catch (e) {
-          console.error(`[Vonage] Parse error:`, e.message);
-          resolve();
+          console.error(`[Textbelt] Parse error:`, e.message);
         }
+        resolve();
       });
     });
 
     req.on("error", (e) => {
-      console.error(`[Vonage] Request error:`, e.message);
-      resolve(); // Don't crash the server on network error
+      console.error(`[Textbelt] Request error:`, e.message);
+      resolve();
     });
 
     req.write(params);
