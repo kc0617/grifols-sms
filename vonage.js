@@ -31,9 +31,9 @@ async function sendSMS(toNumber, message) {
         try {
           const json = JSON.parse(data);
           if (json.success) {
-            console.log(`[Textbelt] SMS sent to ${toNumber}`);
+            console.log(`[Textbelt] ✅ SMS sent to ${toNumber}`);
           } else {
-            console.error(`[Textbelt] Send failed:`, json.error);
+            console.error(`[Textbelt] ❌ Send failed:`, json.error);
           }
         } catch (e) {
           console.error(`[Textbelt] Parse error:`, e.message);
