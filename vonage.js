@@ -1,38 +1,62 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // vonage.js
-// Handles sending outbound SMS messages via the Vonage Messages API.
-// Your Vonage API key, secret, and virtual number are loaded from .env
+// Sends SMS via Vonage REST API directly (no SDK dependency).
 // ─────────────────────────────────────────────────────────────────────────────
 
-const { Vonage } = require("@vonage/server-sdk");
+const https = require("https");
+const querystring = require("querystring");
 
-// Initialize Vonage client using credentials from your .env file
-const vonage = new Vonage({
-  apiKey: process.env.VONAGE_API_KEY,
-  apiSecret: process.env.VONAGE_API_SECRET,
-});
+const FROM_NUMBER = process.env.VONAGE_FROM_NUMBER;
 
-const FROM_NUMBER = process.env.VONAGE_FROM_NUMBER; // Your Vonage virtual number
-
-/**
- * Send an SMS message to a donor.
- *
- * @param {string} toNumber - Donor's phone number in E.164 format (e.g. "+14235551234")
- * @param {string} message  - The text message to send
- * @returns {Promise<void>}
- */
 async function sendSMS(toNumber, message) {
-  try {
-    await vonage.sms.send({
-      to: toNumber,
-      from: FROM_NUMBER,
-      text: message,
+  return new Promise((resolve, reject) => {
+    const params = querystring.stringify({
+      api_key:    process.env.VONAGE_API_KEY,
+      api_secret: process.env.VONAGE_API_SECRET,
+      to:         toNumber.replace(/\D/g, ""),
+      from:       FROM_NUMBER,
+      text:       message,
     });
-    console.log(`[Vonage] SMS sent to ${toNumber}`);
-  } catch (error) {
-    console.error(`[Vonage] Failed to send SMS to ${toNumber}:`, error.message);
-    throw error;
-  }
+
+    const options = {
+      hostname: "rest.nexmo.com",
+      path:     "/sms/json",
+      method:   "POST",
+      headers: {
+        "Content-Type":   "application/x-www-form-urlencoded",
+        "Content-Length": Buffer.byteLength(params),
+      },
+    };
+
+    const req = https.request(options, (res) => {
+      let data = "";
+      res.on("data", (chunk) => { data += chunk; });
+      res.on("end", () => {
+        try {
+          const json = JSON.parse(data);
+          const msg = json.messages && json.messages[0];
+          if (msg && msg.status === "0") {
+            console.log(`[Vonage] SMS sent to ${toNumber}`);
+            resolve();
+          } else {
+            console.error(`[Vonage] Send failed:`, JSON.stringify(msg));
+            resolve(); // Don't crash the server on SMS failure
+          }
+        } catch (e) {
+          console.error(`[Vonage] Parse error:`, e.message);
+          resolve();
+        }
+      });
+    });
+
+    req.on("error", (e) => {
+      console.error(`[Vonage] Request error:`, e.message);
+      resolve(); // Don't crash the server on network error
+    });
+
+    req.write(params);
+    req.end();
+  });
 }
 
 module.exports = { sendSMS };
